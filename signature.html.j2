@@ -1,0 +1,276 @@
+<!--
+    Date:           April 12, 2024
+    Author:         Casey Sparks
+    Description:    Email signature template.
+    -->
+<table
+    border="0"
+    cellpadding="0"
+    style="
+        border-spacing:0px;
+        border-collapse:collapse;
+        color:#9CA2AB;
+        font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+        font-size:12px;
+        line-height:14px;
+        table-layout:fixed
+        "
+    >
+    <tbody>
+        <tr>
+            <td>
+                <img
+                    src="https://assets.influential.co/email_signature/images/spacer.gif"
+                    height="25"
+                    style="
+                        height:25px;
+                        margin:0;
+                        padding:0;
+                        "
+                    />
+                </td>
+            </tr>
+        <tr>                                                                    <!-- Name/Pronouns/Title -->
+            <td
+                valign="top"
+                style="
+                    padding-left:7px;
+                    padding-top:0px;
+                    padding-bottom:0px;
+                    padding-right:0px;
+                    border-left:3px solid #0025FA;
+                    "
+                >
+                <span
+                    style="
+                        text-align:left;
+                        color:#191919;
+                        font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+                        font-size:14px;
+                        font-weight:bold
+                        "
+                    >
+                        {{name}}
+                    </span>
+                {% if pronouns %}
+                <span
+                    style="
+                        text-align:left;
+                        color:#999998;
+                        font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+                        font-size:12px;
+                        font-weight:normal
+                        "
+                    >
+                        ({{pronouns}})
+                    </span>
+                {% endif %}
+                <br />
+                <span
+                    style="
+                        text-align:left;
+                        margin-top:0px;
+                        margin-bottom:0px;
+                        color:#999998;
+                        font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+                        font-weight:normal;
+                        font-size:
+                        12px;
+                        "
+                    >
+                        {{title}}
+                    </span>
+                <br />
+                </td>
+            </tr>
+        <tr>
+            <td
+                valign="top"
+                height="8px"
+                style="
+                    padding-left:0px;
+                    padding-top:0px;
+                    padding-bottom:0px;
+                    padding-right:0px;
+                    "
+                >
+                </td>
+            </tr>
+        <tr>
+            <td
+                valign="top"
+                height="1px"
+                style="
+                    height:1px;
+                    line-height:1px;
+                    padding-left:0px;
+                    padding-top:0px;
+                    padding-bottom:0px;
+                    padding-right:0px;
+                    background-color:#F4F7FA;
+                    font-size:1px;
+                    "
+                >
+                    &nbsp;
+                </td>
+            </tr>
+        <tr>                                                                    <!-- AdAge Stack -->
+            <td
+                valign="top"
+                style="
+                    padding-left:0px;
+                    padding-top:8px;
+                    padding-bottom:8px;
+                    padding-right:0px;
+                    "
+                >
+                <a
+                    href="https://www.influential.co/"
+                    target="_blank"
+                    style="
+                        margin:0;
+                        padding:0;
+                        "
+                    >
+                    <img
+                        src="https://assets.influential.co/email_signature/Influential_AdAge_Stack.png"
+                        nosend="1"
+                        border="0"
+                        width="165"
+                        height="68"
+                        alt="Influential"
+                        title="Influential"
+                        />
+                    </a>
+                </td>
+            </tr>
+        <tr>                                                                    <!-- Tagline/Phone/Website -->
+            <td
+                valign="top"
+                style="
+                    padding-left:0px;
+                    padding-top:0px;
+                    padding-bottom:0px;
+                    padding-right:0px;
+                    "
+                >
+                <span
+                    style="
+                        text-align:left;
+                        color:#999998;
+                        font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+                        font-size:12px;
+                        font-style:normal;
+                        font-weight:normal;
+                        text-decoration:none !important;
+                        "
+                    >
+                    Influential is Remote-First
+                    <br />
+                    {% if  phone %}
+                    <a
+                        href="tel:{{phone}}"
+                        target="_blank"
+                        style="
+                            color:#0025Fa;text-decoration:none !important;
+                            display:inline;
+                            font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+                            "
+                        >
+                        <font
+                            style="
+                                color:#0025FA;
+                                text-decoration:none !important;
+                                font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+                                "
+                            >
+                                {{phone_dotted}}
+                            </font>
+                        </a>
+                    <font
+                        size="1"
+                        color="#999998"
+                        >
+                            //
+                        </font>
+                    {% endif %}
+                    <a
+                        href="https://influential.co"
+                        target="_blank"
+                        style="
+                            color:#0025FA;
+                            text-decoration:none !important;
+                            display:inline;
+                            font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+                            "
+                        >
+                        <font
+                            style="
+                                color:#0025FA;
+                                text-decoration:none !important;
+                                font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+                                "
+                            >
+                                influential.co
+                            </font>
+                        </a>
+                    </span>
+                </td>
+            </tr>
+        <tr>                                                                    <!-- Footer icons -->
+            <td
+                valign="top"
+                style="
+                    padding-left:0px;
+                    padding-top:7px;
+                    padding-bottom:0px;
+                    padding-right:0px;
+                    "
+                >
+                <a
+                    href="https://www.linkedin.com/company/influential_1"
+                    target="_blank"
+                    style="
+                        display:inline;
+                        text-decoration:none;
+                        "
+                    >
+                    <img
+                        src="https://assets.influential.co/email_signature/Email_LI.png"
+                        nosend="1"
+                        border="0"
+                        width="13"
+                        height="13"
+                        alt="LinkedIn"
+                        style="vertical-align:middle;"
+                        >
+                    </a>
+                <span style="white-space:nowrap">
+                    <img
+                        src="https://assets.influential.co/email_signature/spacer.gif"
+                        width="2"
+                        style="border:0px;vertical-align:middle"
+                        >
+                    </span>
+                <a
+                    href="https://www.instagram.com/influential_co"
+                    target="_blank"
+                    style="
+                        display:inline;
+                        text-decoration:none;
+                        "
+                    >
+                    <img
+                        src="https://assets.influential.co/email_signature/Email_IG.png"
+                        nosend="1"
+                        border="0"
+                        width="13"
+                        height="13"
+                        alt="Instagram"
+                        style="vertical-align:middle;"
+                        >
+                    </a>
+                </td>
+            </tr>
+        </tbody>
+    </table>

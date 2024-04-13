@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+# -*- coding:utf-8 -*-
+# Author:       Casey Sparks
+# Date:         March 26, 2024
+# Description:
+'''
+Reads a table of users from Google Sheets and calls a GAM subprocess to update their signatures
+Consumes an HTML-formatted email signature and a CSV file with the requisite headers and calls the GAM module to update
+the Gmail signatures of all users.
+'''
+
+from argparse import ArgumentParser, Namespace
+from datetime import datetime
+from locale import LC_ALL, setlocale
+from logging import FileHandler, Formatter, Logger, RootLogger, StreamHandler, getLogger
+from pathlib import Path
+from re import match as re_match
+from subprocess import run
+from sys import exit as sys_exit
+from urllib.parse import urlparse
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from jinja2 import BaseLoader, Environment
+from jinja2.environment import Template
+
+
+FIELDS = ['email', 'name', 'title', 'phone_hyphenated', 'pronouns']             # Template/sheet fields.
+LOG = getLogger(__name__)                                                       # Instantiate logger.
+
+getLogger('google_auth_oauthlib').setLevel(20)                                  # Avoid logging Google auth secrets.
+getLogger('googleapiclient').setLevel(20)                                       # Avoid logging Google API secrets.
+setlocale(LC_ALL, 'en_US.UTF-8')                                                # Set locale.
+
+
+def get_arguments() -> Namespace:
+    '''
+    Get cmdline arguments.
+        :return:    argparse.Namespace instance of user arguments.
+    '''
+    pwd = Path(__file__).parent
+    parser = ArgumentParser(description=__doc__)                                # Instantiate parser.
+    log_opt = parser.add_mutually_exclusive_group()
+
+    parser.add_argument(                                                        # sheet_url
+        'sheet_url',
+        type=str,
+        help='URL of the Google Sheet containing user data.'
+        )
+    parser.add_argument(                                                        # sheet_name
+        'sheet_name',
+        type=str,
+        help='Name of the Google Sheet page containing the user data.'
+        )
+    parser.add_argument(                                                        # domain
+        'domain',
+        type=str,
+        help='Domain of Google Workspace user email addresses. Used for data validation.'
+        )
+    parser.add_argument(                                                        # --template
+        '--template',
+        dest='template',
+        type=Path,
+        default=pwd/'signature.html.j2',
+        help='Path of the Jinja2 template file.'
+        )
+    parser.add_argument(                                                        # --gam-path
+        '--gam-path',
+        dest='gam_path',
+        default=Path.home()/'bin/gam/gam',
+        type=Path,
+        help='Absolute path of the gam executable.',
+        )
+    parser.add_argument(                                                        # --output-dir
+        '--output-dir',
+        dest='output_dir',
+        default=pwd/'output/',
+        type=Path,
+        help='Directory to write all logs and email signatures.'
+        )
+    parser.add_argument(                                                        # --confirm
+        '--confirm',
+        dest='confirm',
+        action='store_true',
+        help='Manually confirm, and push changes to Google Workspace.',
+        )
+    log_opt.add_argument(                                                       # --quiet
+        '-q', '--quiet',
+        dest='quiet',
+        action='store_true',
+        help='Suppress log output.',
+        )
+    log_opt.add_argument(                                                       # --log-file
+        '-l', '--log-file',
+        dest='log_file',
+        default=pwd/f'output/gam_sig_upd-{datetime.now().strftime("%s")}.log',  # Current epoch time string.
+        type=Path,
+        help='Path to write the application log file (default: ~/{timestamp}.log)',
+        )
+
+    arguments = parser.parse_args()                                             # Parse arguments.
+
+    for key, path in {k: v for k, v in arguments.__dict__.items() if isinstance(v, Path)}.items():
+        arguments.__dict__[key] = path.absolute()                               # Cast relative paths to absolute.
+
+    assert ((url := urlparse(arguments.sheet_url)).scheme and url.netloc), f'Invalid URL: {arguments.sheet_url}'
+    assert arguments.template.is_file(), f':arg template = {arguments.template}: file does not exist.'
+    assert arguments.gam_path.is_file(), f'GAM not found at {arguments.gam_path}. Please pass --gam-path argument.'
+    assert arguments.output_dir.is_dir(), f':arg output-dir = {arguments.output_dir}: parent directory does not exist.'
+    assert arguments.log_file.parent.is_dir(), f':arg log-file = {arguments.log_file}: parent directory does not exist.'
+
+    arguments.template = Environment(loader=BaseLoader).from_string(arguments.template.read_text())
+    arguments.__dict__['log_level'] = 50 if arguments.quiet else 0
+
+    if not arguments.output_dir.is_dir():                                       # Create output dir if not exists.
+        LOG.debug(f'{arguments.output_dir} not found. Creating.')
+        arguments.output_dir.mkdir(parents=True, exist_ok=True)
+
+    return arguments
+
+
+def configure_logger(
+    logger: Logger = LOG,
+    log_level: int = 0,                                                         # Default NOTSET.
+    log_file: Path = Path(__file__)/f'{__name__}_{datetime.now().strftime("%s")}.log',
+        ) -> RootLogger:
+    '''
+    Enable logging and handle outputs.
+        :param logger:      Instantiated Logger() instance.
+        :param log_level:   Desired log level.
+        :param log_file:    Optional path for output log file.
+        :return:            Instantiated logger.RootLogger instance.
+    '''
+    assert isinstance(log_level, int), ':param log_level: must be instance of 50 >= int() >= 0'
+    assert 50 >= log_level >= 0, ':param log_level: must be between 50 and 0 (incl.).'
+    assert isinstance(log_file, Path), ':param file: must be instance of Path() or None.' if log_file else None
+    assert log_file.parent.exists(), f'{log_file} does not exist.' if isinstance(log_file, Path) else None
+
+    handle_stream = StreamHandler()                                             # Stream handler.
+    formatter = Formatter('{asctime} {threadName:12} {levelname:8}: "{message}"', style='{')
+
+    handle_stream.setFormatter(formatter)                                       # Set log stream format.
+    logger.addHandler(handle_stream)                                            # Log to screen.
+
+    if log_file:
+        handle_file = FileHandler(log_file)
+
+        handle_file.setFormatter(formatter)                                     # Set log file format.
+        logger.addHandler(handle_file)                                          # Log to file.
+
+    logger.setLevel(log_level)                                                  # User-specified log level.
+    logger.debug('Logger instantiated.')
+
+    return logger
+
+
+def sheet2dict(
+    sheet_url: str,
+    sheet_name: str,
+    domain: str,
+    credentials: Path = Path.home()/'bin/gam/client_secrets.json',
+        ) -> list[dict[str]]:
+    '''
+    Read a Google Sheet containing user data into memory.
+        :param sheet_url:   The URL of the Google Sheet containing user data.
+        :param sheet_name:  The name of the sheet containing the user data.
+        :param domain:      The domain of the user emails. Used for data validatation.
+        :param credentials: Path to your GAM credentials (client_secrets.json).
+        :return:            A list of dicts containing user data.
+    '''
+    assert ((url := urlparse(str(sheet_url))).scheme and url.netloc), f':param sheet_url = {sheet_url}: Invalid URL.'
+    assert isinstance(sheet_name, str), ':param sheet_name: must be instance of str.'
+    assert isinstance(domain, str), ':param domain: must be instance of str.'
+    assert isinstance(credentials, Path), ':param credential_file: must be instance of pathlib.Path.'
+    assert credentials.is_file(), f'{credentials} does not exist.'
+
+    def _munge_data(user_data: list[list[str]]) -> list[dict[str]]:
+        '''
+        Modulate a user data object to remove fields not matching per-field requirements.
+            :param user_data:   List of dictionaries containing user signature attributes.
+            :return:            The modulated list of dictionaries.
+        '''
+        assert isinstance(user_data, list), ':param user_data: must be instance of list.'
+        assert all(isinstance(item, list) for item in user_data), ':param user_data: items must be instance of dict.'
+        assert len(user_data[0]) == len(FIELDS), 'Google Sheet has too many columns.'
+
+        expr = r'^[0-9]{3}-[0-9]{3}-[0-9]{4}$'                                  # Regex for phone number validation.
+        users_list = []                                                         # List of user dictionaries.
+
+        for item in user_data[1:]:                                              # Create, validate user dictionary.
+            user_dict = dict(zip(FIELDS, item))
+            email = user_dict['email']
+            phone = user_dict['phone_hyphenated']
+
+            assert email.endswith(domain), f'{email} is not a company email address.'
+            assert user_dict['name'], f'Missing name field for {email}.'
+            assert re_match(expr, phone), f'{email}: has invalid phone number: {phone}' if phone else None
+
+            user_dict['phone_dotted'] = phone.replace('-', '.') if phone else phone
+
+            users_list.append(user_dict)                                        # Add dict to list.
+
+        return users_list
+
+    try:
+        service = build(                                                        # Set up GSheets service.
+            'sheets',
+            'v4',
+            credentials=InstalledAppFlow.from_client_secrets_file(              # Authorize app (every time).
+                credentials,
+                ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+                ).run_local_server(port=0)
+            ).spreadsheets()
+        result = service.values().get(
+            spreadsheetId=url.path.split('/')[3],                               # Read sheet ID from URL.
+            range='Google Workspace'
+            ).execute()
+
+        if not (users := result.get('values', [])):
+            LOG.critical('No Google Sheets data found.')
+            sys_exit(1)
+
+        return _munge_data(users)
+
+    except HttpError as err:
+        LOG.critical(err)
+
+
+def generate_signatures(
+    users_list: list[dict[str]],
+    template: Template,
+    signature_dir: Path = Path(__file__).parent/'output/',
+        ) -> None:
+    '''
+    Write an email signature out to disk and return its absolute path.
+        :param users_list:      List of dictionaries of all users to create signatures for.
+        :param template:        The Jinja2 HTML template environment to use for user signatures.
+        :param signature_dir:   The directory to write the resultant email signature.
+    '''
+    assert isinstance(users_list, list), ':param users_list: must be instance of list().'
+    assert all(isinstance(item, dict) for item in users_list), ':param user_list: objects must be instances of list().'
+    assert isinstance(signature_dir, Path), ':param signature_dir: must be instance of pathlib.Path().'
+    assert signature_dir.exists(), ':param signature_dir: does not exist.'
+    assert isinstance(template, Template), ':param template: must be instance of jinja2.environment.Template().'
+
+    for user_dict in users_list:
+        with (outfile := signature_dir/f'{user_dict["email"]}.html').open('w', encoding='utf-8') as signature:
+            signature.write(template.render(user_dict))                         # Render template, write to disk.
+            LOG.debug(f'Signature file written to {outfile}')
+
+    LOG.info(f'Finished creating user signatures. Files written to {signature_dir}.')
+
+
+def run_gam_sp(
+    domain: str,
+    signature_dir: Path = Path(__file__).parent/'output/',
+    gam_path: Path = Path.home()/'bin/gam/gam',
+        ) -> None:
+    '''
+    Start a GAM subprocess to push new signatures to all Google Workspace users in :param user_list.:
+        :param signature_dir:   The directory containing the user signature HTML files.
+        :param gam_path:        Absolute path of the gam executable.
+        :param domain:          The domain of the Google Workspace. Used for data validation.
+    '''
+    assert isinstance(signature_dir, Path), ':param signature_dir: must be instance of pathlib.Path().'
+    assert signature_dir.exists(), ':param signature_dir: does not exist.'
+    assert isinstance(gam_path, Path), f':param signature_dir = {signature_dir}: must be instance of pathlib.Path().'
+    assert gam_path.is_file(), f':param gam_path = {gam_path}: does not exist.'
+    assert isinstance(domain, str), ':param domain: must be instance of str().'
+
+    for file in signature_dir.glob(f'*@{domain}.html'):
+        proc = run(                                                             # Run GAM suprocess.
+            [f'{gam_path}', 'user', (email := file.with_suffix('').name), 'signature', 'file', f'{file}', 'html'],
+            capture_output=True,
+            check=True,
+            )
+
+        LOG.debug(email)
+
+        if proc.stdout:
+            LOG.debug(proc.stdout.decode('utf-8'))
+        if proc.stderr:
+            LOG.error(proc.stderr.decode('utf-8'))
+
+
+if __name__ == '__main__':
+    ARGS = get_arguments()
+
+    configure_logger(LOG, ARGS.log_level, ARGS.log_file)
+
+    for user in sheet2dict(ARGS.sheet_url, ARGS.sheet_name, ARGS.domain, ARGS.gam_path.parent/'client_secrets.json'):
+        generate_signatures(user, ARGS.template, ARGS.output_dir)
+
+    if ARGS.confirm:
+        run_gam_sp(ARGS.domain, ARGS.output_dir, ARGS.gam_path)
+        LOG.info('All signatures updated.')
+    else:
+        LOG.debug('Dry run complete.')
+
+    LOG.info('Signatures written to {ARGS.output_dir}.')
+    LOG.info('Log file written to {ARGS.log_file}.')
